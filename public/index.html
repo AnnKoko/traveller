@@ -137,6 +137,24 @@
       position: relative;
       background-color: #334155;
     }
+    .poi-image-placeholder {
+      height: 100px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.5rem;
+      position: relative;
+    }
+    .poi-image-placeholder.cat-museum { background: linear-gradient(135deg, #7c3aed, #4f46e5); }
+    .poi-image-placeholder.cat-attraction { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    .poi-image-placeholder.cat-viewpoint { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
+    .poi-image-placeholder.cat-park { background: linear-gradient(135deg, #22c55e, #16a34a); }
+    .poi-image-placeholder.cat-beach { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+    .poi-image-placeholder.cat-historic { background: linear-gradient(135deg, #a78bfa, #8b5cf6); }
+    .poi-image-placeholder.cat-climbing { background: linear-gradient(135deg, #ef4444, #dc2626); }
+    .poi-image-placeholder.cat-diving { background: linear-gradient(135deg, #0284c7, #0369a1); }
+    .poi-image-placeholder.cat-surfing { background: linear-gradient(135deg, #14b8a6, #0d9488); }
+    .poi-image-placeholder.cat-default { background: linear-gradient(135deg, #64748b, #475569); }
     .poi-category-badge {
       position: absolute;
       top: 0.5rem; left: 0.5rem;
@@ -393,9 +411,12 @@
         <div class="trip-summary">
           <div class="trip-info">
             <h3>✨ Обрано <span id="selected-count">0</span> місць</h3>
-            <p>Натисніть для створення маршруту</p>
+            <p id="trip-hint">Натисніть для створення маршруту</p>
           </div>
-          <button class="btn-plan" id="plan-btn">🗺️ Планувати</button>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn-plan" id="view-route-btn" style="display: none; background: #10b981; padding: 0.75rem;">🗺️</button>
+            <button class="btn-plan" id="plan-btn">🗺️ Планувати</button>
+          </div>
         </div>
       </div>
     </div>
@@ -464,6 +485,8 @@
     let markers = [];
     let accommodationLocation = null;
     let map;
+    let generatedRoute = null;
+    let routeStartPoint = null;
 
     const categoryIcons = {
       museum: '🏛️', attraction: '⭐', viewpoint: '👁️', gallery: '🖼️',
@@ -724,23 +747,77 @@
       });
     }
 
+    function generateDescription(poi) {
+      const tags = poi.raw_tags || {};
+      const parts = [];
+
+      // Check for explicit description
+      if (tags.description) return tags.description;
+      if (tags['description:uk']) return tags['description:uk'];
+      if (tags['description:en']) return tags['description:en'];
+
+      // Build description from tags
+      if (tags.cuisine) parts.push(`Кухня: ${tags.cuisine.replace(/;/g, ', ')}`);
+      if (tags.fee === 'yes') parts.push('💰 Платний вхід');
+      else if (tags.fee === 'no') parts.push('🆓 Безкоштовно');
+      if (tags.wheelchair === 'yes') parts.push('♿ Доступно');
+      if (tags.internet_access === 'wlan' || tags.internet_access === 'yes') parts.push('📶 Wi-Fi');
+      if (tags.outdoor_seating === 'yes') parts.push('🌤️ Тераса');
+      if (tags.historic) parts.push(`Історичне: ${tags.historic.replace(/_/g, ' ')}`);
+      if (tags.sport) parts.push(`Спорт: ${tags.sport.replace(/_/g, ' ')}`);
+      if (tags.building && !['yes', 'commercial'].includes(tags.building)) parts.push(`${tags.building.replace(/_/g, ' ')}`);
+      if (tags.artwork_type) parts.push(`Арт: ${tags.artwork_type.replace(/_/g, ' ')}`);
+      if (tags.stars) parts.push(`${'⭐'.repeat(Math.min(parseInt(tags.stars), 5))}`);
+
+      if (parts.length) return parts.join(' • ');
+
+      // Default: category description
+      const categoryDescriptions = {
+        museum: 'Музей з експозиціями та колекціями',
+        attraction: 'Популярна туристична пам\'ятка',
+        viewpoint: 'Оглядовий майданчик з чудовим видом',
+        park: 'Парк для відпочинку та прогулянок',
+        beach: 'Пляж для відпочинку біля води',
+        historic: 'Історична пам\'ятка',
+        climbing: 'Місце для скелелазіння',
+        diving: 'Точка для дайвінгу',
+        surfing: 'Спот для серфінгу',
+        paragliding: 'Місце для парапланеризму',
+        restaurant: 'Ресторан з різноманітним меню',
+        cafe: 'Кафе для перекусу та кави',
+        gallery: 'Галерея мистецтв'
+      };
+      return categoryDescriptions[poi.category] || `${categoryIcons[poi.category] || '📍'} Цікаве місце`;
+    }
+
     function renderPOICard(poi, index) {
       const isSelected = selectedPois.has(index);
-      const image = poi.imageUrl || defaultImages[poi.category] || defaultImages.default;
-      const desc = poi.raw_tags?.description || poi.raw_tags?.['description:uk'] || poi.raw_tags?.['description:en'] || `${categoryIcons[poi.category] || ''} ${poi.category.replace(/_/g, ' ')}`;
-      return `
-        <div class="poi-card ${isSelected ? 'selected' : ''}" data-index="${index}">
-          <div class="poi-image" style="background-image: url('${image}')" onerror="this.style.backgroundImage='url(${defaultImages.default})'">
+      const hasImage = !!poi.imageUrl;
+      const desc = generateDescription(poi);
+      const catClass = ['museum','attraction','viewpoint','park','beach','historic','climbing','diving','surfing'].includes(poi.category) ? `cat-${poi.category}` : 'cat-default';
+
+      const imageHtml = hasImage
+        ? `<div class="poi-image" style="background-image: url('${poi.imageUrl}')">
             <span class="poi-category-badge">${categoryIcons[poi.category] || '📍'} ${poi.category.replace(/_/g, ' ')}</span>
             <button class="poi-add-btn ${isSelected ? 'added' : ''}" data-index="${index}">${isSelected ? '✓' : '+'}</button>
-          </div>
+          </div>`
+        : `<div class="poi-image-placeholder ${catClass}">
+            <span style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">${categoryIcons[poi.category] || '📍'}</span>
+            <span class="poi-category-badge">${poi.category.replace(/_/g, ' ')}</span>
+            <button class="poi-add-btn ${isSelected ? 'added' : ''}" data-index="${index}">${isSelected ? '✓' : '+'}</button>
+          </div>`;
+
+      return `
+        <div class="poi-card ${isSelected ? 'selected' : ''}" data-index="${index}">
+          ${imageHtml}
           <div class="poi-content">
             <div class="poi-name">${poi.name}</div>
             <div class="poi-description">${desc}</div>
             <div class="poi-meta">
-              ${poi.raw_tags?.wikidata ? '<span style="color:#10b981;">📸 Фото</span>' : ''}
+              ${hasImage ? '<span style="color:#10b981;">📸</span>' : ''}
               ${poi.opening_hours ? `<span>🕐 ${poi.opening_hours.split(';')[0]}</span>` : ''}
-              ${poi.website ? '<span>🔗 Сайт</span>' : ''}
+              ${poi.website ? '<span>🔗</span>' : ''}
+              ${poi.raw_tags?.phone ? '<span>📞</span>' : ''}
             </div>
           </div>
         </div>
@@ -767,7 +844,16 @@
 
     function updateTripPanel() {
       document.getElementById('selected-count').textContent = selectedPois.size;
-      document.getElementById('trip-panel').classList.toggle('visible', selectedPois.size > 0);
+      document.getElementById('trip-panel').classList.toggle('visible', selectedPois.size > 0 || generatedRoute);
+      const viewRouteBtn = document.getElementById('view-route-btn');
+      const tripHint = document.getElementById('trip-hint');
+      if (generatedRoute) {
+        viewRouteBtn.style.display = 'block';
+        tripHint.textContent = 'Маршрут готовий! Переглянути на карті';
+      } else {
+        viewRouteBtn.style.display = 'none';
+        tripHint.textContent = 'Натисніть для створення маршруту';
+      }
     }
 
     // Modal
@@ -775,6 +861,11 @@
     document.getElementById('plan-btn').addEventListener('click', () => { modal.classList.add('visible'); checkCapacity(); });
     document.getElementById('modal-close').addEventListener('click', closeModal);
     document.getElementById('modal-cancel').addEventListener('click', closeModal);
+    document.getElementById('view-route-btn').addEventListener('click', () => {
+      if (generatedRoute && routeStartPoint) {
+        drawRouteOnMap(generatedRoute, routeStartPoint);
+      }
+    });
 
     function closeModal() {
       modal.classList.remove('visible');
@@ -804,11 +895,36 @@
       if (selectedPois.size > capacity) {
         warning.classList.add('visible');
         const toRemove = selectedPois.size - capacity;
-        const selectedArray = Array.from(selectedPois);
-        const suggestions = selectedArray.slice(-toRemove);
-        suggestRemove.innerHTML = suggestions.map(idx => `
-          <button class="remove-chip" data-index="${idx}">✕ ${pois[idx]?.name?.substring(0, 15) || 'місце'}...</button>
-        `).join('');
+
+        // Calculate scores for each selected POI (higher = worse, should be removed first)
+        // Score based on: distance from center + lack of photo
+        const centerPoint = accommodationLocation || selectedLocation || { lat: 0, lng: 0 };
+        const selectedWithScores = Array.from(selectedPois).map(idx => {
+          const poi = pois[idx];
+          if (!poi) return { idx, score: 0 };
+
+          // Distance score (0-10 range normalized)
+          const distance = haversine(centerPoint.lat, centerPoint.lng, poi.lat, poi.lng);
+
+          // Photo penalty: places without photos get +2 score (more likely to remove)
+          const photoScore = poi.imageUrl ? 0 : 2;
+
+          // No wikidata penalty
+          const wikidataScore = poi.raw_tags?.wikidata ? 0 : 1;
+
+          return { idx, score: distance + photoScore + wikidataScore, distance, name: poi.name };
+        });
+
+        // Sort by score descending (highest score = remove first)
+        selectedWithScores.sort((a, b) => b.score - a.score);
+
+        const suggestions = selectedWithScores.slice(0, toRemove);
+
+        suggestRemove.innerHTML = suggestions.map(item => {
+          const reason = item.distance > 3 ? `📍 ${item.distance.toFixed(1)}км` : '📷 без фото';
+          return `<button class="remove-chip" data-index="${item.idx}" title="${reason}">✕ ${pois[item.idx]?.name?.substring(0, 12) || 'місце'}... <small style="opacity:0.7">${reason}</small></button>`;
+        }).join('');
+
         suggestRemove.querySelectorAll('.remove-chip').forEach(chip => {
           chip.addEventListener('click', () => { togglePOI(parseInt(chip.dataset.index)); checkCapacity(); });
         });
@@ -855,6 +971,10 @@
 
       const route = optimizeRoute(selectedList, startPoint, days, perDay);
 
+      // Save route for later viewing
+      generatedRoute = route;
+      routeStartPoint = startPoint;
+
       document.getElementById('modal-body').style.display = 'none';
       document.getElementById('modal-footer').style.display = 'none';
       const routeResult = document.getElementById('route-result');
@@ -880,6 +1000,7 @@
       `;
 
       drawRouteOnMap(route, startPoint);
+      updateTripPanel();
     }
 
     function optimizeRoute(places, start, days, perDay) {
