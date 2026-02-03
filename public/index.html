@@ -1007,8 +1007,15 @@
       const remaining = [...places];
       const route = [];
       let current = start;
+      const hasAccommodation = !!accommodationLocation;
+
       for (let day = 0; day < days && remaining.length > 0; day++) {
         const dayRoute = [];
+        // If has accommodation, each day starts from hotel; otherwise continue from last POI
+        if (hasAccommodation && day > 0) {
+          current = start;
+        }
+
         for (let i = 0; i < perDay && remaining.length > 0; i++) {
           let nearestIdx = 0, nearestDist = Infinity;
           remaining.forEach((poi, idx) => {
@@ -1020,7 +1027,6 @@
           current = { lat: next.lat, lng: next.lng };
         }
         route.push(dayRoute);
-        current = start;
       }
       return route;
     }
@@ -1032,18 +1038,44 @@
     }
 
     let routeLines = [];
+    let accommodationMarker = null;
     const dayColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
 
     function drawRouteOnMap(route, start) {
       routeLines.forEach(l => map.removeLayer(l));
       routeLines = [];
+      if (accommodationMarker) map.removeLayer(accommodationMarker);
+
+      // Add accommodation marker if user specified where they stay
+      if (accommodationLocation) {
+        accommodationMarker = L.marker([accommodationLocation.lat, accommodationLocation.lng], {
+          icon: L.divIcon({
+            className: 'accommodation-marker',
+            html: '<div style="background:#10b981;color:white;padding:4px 8px;border-radius:8px;font-size:14px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3);">🏠 Готель</div>',
+            iconSize: [80, 30],
+            iconAnchor: [40, 15]
+          })
+        }).addTo(map);
+      }
+
       route.forEach((dayPois, dayIdx) => {
-        const points = [[start.lat, start.lng], ...dayPois.map(p => [p.lat, p.lng]), [start.lat, start.lng]];
-        const line = L.polyline(points, { color: dayColors[dayIdx % dayColors.length], weight: 4, opacity: 0.8 }).addTo(map);
-        routeLines.push(line);
+        let points;
+        if (accommodationLocation) {
+          // If accommodation set: home -> POIs -> home
+          points = [[start.lat, start.lng], ...dayPois.map(p => [p.lat, p.lng]), [start.lat, start.lng]];
+        } else {
+          // If no accommodation: just connect POIs to each other
+          points = dayPois.map(p => [p.lat, p.lng]);
+        }
+
+        if (points.length > 1) {
+          const line = L.polyline(points, { color: dayColors[dayIdx % dayColors.length], weight: 4, opacity: 0.8 }).addTo(map);
+          routeLines.push(line);
+        }
       });
+
       const allPoints = route.flat().map(p => [p.lat, p.lng]);
-      allPoints.push([start.lat, start.lng]);
+      if (accommodationLocation) allPoints.push([accommodationLocation.lat, accommodationLocation.lng]);
       if (allPoints.length > 1) map.fitBounds(allPoints);
     }
   </script>
