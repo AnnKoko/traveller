@@ -1,6 +1,8 @@
 const express = require('express');
 const path = require('path');
-const { handleOsmImport } = require('./api/osm/import');
+const { handleOsmImportDemo } = require('./api/osm/demo');
+const { getAvailableCategories } = require('./lib/overpass');
+const { searchPlace } = require('./lib/nominatim');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -8,8 +10,28 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
-// OSM Import endpoint
-app.post('/api/osm/import', handleOsmImport);
+// OSM Import endpoint (demo mode - no auth required)
+app.post('/api/osm/import', handleOsmImportDemo);
+
+// Get available categories
+app.get('/api/osm/categories', (req, res) => {
+  res.json(getAvailableCategories());
+});
+
+// Search for cities/places (Nominatim)
+app.get('/api/geocode/search', async (req, res) => {
+  try {
+    const { q, limit = 5 } = req.query;
+    if (!q) {
+      return res.status(400).json({ error: 'Query parameter "q" is required' });
+    }
+    const results = await searchPlace(q, { limit: parseInt(limit) });
+    res.json(results);
+  } catch (error) {
+    console.error('Geocode error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 const destinations = [
   { id: 1, name: 'Paris', country: 'France' },

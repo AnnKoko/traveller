@@ -12,29 +12,77 @@ const MAX_RETRIES = 2;
  * Category definitions mapping to OSM tags
  */
 const CATEGORY_TAGS = {
+  // Culture & Sightseeing
   museum: [{ key: 'tourism', value: 'museum' }],
   attraction: [{ key: 'tourism', value: 'attraction' }],
   viewpoint: [{ key: 'tourism', value: 'viewpoint' }],
+  gallery: [{ key: 'tourism', value: 'gallery' }],
+  historic: [{ key: 'historic', value: '*' }],
+  religious: [{ key: 'amenity', value: 'place_of_worship' }],
+
+  // Nature & Outdoors
   park: [{ key: 'leisure', value: 'park' }],
   beach: [{ key: 'natural', value: 'beach' }],
-  market: [{ key: 'amenity', value: 'marketplace' }],
+  nature_reserve: [{ key: 'leisure', value: 'nature_reserve' }],
+  waterfall: [{ key: 'waterway', value: 'waterfall' }],
+  peak: [{ key: 'natural', value: 'peak' }],
+  cave: [{ key: 'natural', value: 'cave_entrance' }],
+
+  // Extreme & Adventure Sports
+  climbing: [
+    { key: 'sport', value: 'climbing' },
+    { key: 'climbing', value: '*' }
+  ],
+  diving: [
+    { key: 'sport', value: 'scuba_diving' },
+    { key: 'sport', value: 'diving' }
+  ],
+  surfing: [{ key: 'sport', value: 'surfing' }],
+  kitesurfing: [{ key: 'sport', value: 'kitesurfing' }],
+  paragliding: [
+    { key: 'sport', value: 'paragliding' },
+    { key: 'sport', value: 'hang_gliding' }
+  ],
+  skydiving: [{ key: 'sport', value: 'parachuting' }],
+  bungee: [{ key: 'sport', value: 'bungee_jumping' }],
+  rafting: [{ key: 'sport', value: 'rafting' }],
+  kayak: [
+    { key: 'sport', value: 'kayaking' },
+    { key: 'sport', value: 'canoe' }
+  ],
+  skiing: [
+    { key: 'sport', value: 'skiing' },
+    { key: 'piste:type', value: '*' }
+  ],
+  mountain_biking: [{ key: 'sport', value: 'cycling' }],
+  zip_line: [{ key: 'attraction', value: 'zip_line' }],
+
+  // Food & Drink
   restaurant: [{ key: 'amenity', value: 'restaurant' }],
   cafe: [{ key: 'amenity', value: 'cafe' }],
   bar: [{ key: 'amenity', value: 'bar' }],
-  hotel: [{ key: 'tourism', value: 'hotel' }],
-  historic: [{ key: 'historic', value: '*' }],
-  religious: [{ key: 'amenity', value: 'place_of_worship' }],
+  market: [{ key: 'amenity', value: 'marketplace' }],
+
+  // Entertainment
   theatre: [{ key: 'amenity', value: 'theatre' }],
   cinema: [{ key: 'amenity', value: 'cinema' }],
-  gallery: [{ key: 'tourism', value: 'gallery' }],
   zoo: [{ key: 'tourism', value: 'zoo' }],
   aquarium: [{ key: 'tourism', value: 'aquarium' }],
   theme_park: [{ key: 'tourism', value: 'theme_park' }],
+  nightclub: [{ key: 'amenity', value: 'nightclub' }],
+
+  // Sports & Recreation
   swimming: [
     { key: 'leisure', value: 'swimming_pool' },
     { key: 'sport', value: 'swimming' }
   ],
-  nightclub: [{ key: 'amenity', value: 'nightclub' }]
+  stadium: [{ key: 'leisure', value: 'stadium' }],
+  golf: [{ key: 'leisure', value: 'golf_course' }],
+
+  // Accommodation
+  hotel: [{ key: 'tourism', value: 'hotel' }],
+  hostel: [{ key: 'tourism', value: 'hostel' }],
+  camping: [{ key: 'tourism', value: 'camp_site' }]
 };
 
 /**

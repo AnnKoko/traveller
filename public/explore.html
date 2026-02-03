@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Explore POIs - Traveller</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f1f5f9; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 1rem; }
+    h1 { color: #1e293b; margin-bottom: 1rem; }
+
+    .controls {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .search-row {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .search-row input, .search-row select {
+      padding: 0.75rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+
+    #city-search { flex: 1; min-width: 200px; }
+    #radius { width: 100px; }
+
+    .categories {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .cat-btn {
+      padding: 0.5rem 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 20px;
+      background: white;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: all 0.15s;
+    }
+
+    .cat-btn:hover { border-color: #3b82f6; }
+    .cat-btn.selected { background: #3b82f6; color: white; border-color: #3b82f6; }
+
+    .explore-btn {
+      padding: 0.875rem 2rem;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .explore-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+    .explore-btn:hover:not(:disabled) { background: #2563eb; }
+
+    .results-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      min-height: 500px;
+    }
+
+    @media (max-width: 900px) {
+      .results-container { grid-template-columns: 1fr; }
+    }
+
+    #map {
+      height: 500px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .poi-list {
+      background: white;
+      border-radius: 12px;
+      padding: 1rem;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .poi-item {
+      padding: 0.75rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .poi-item:hover { border-color: #3b82f6; background: #f8fafc; }
+
+    .poi-name { font-weight: 600; color: #1e293b; }
+    .poi-category { font-size: 0.75rem; color: #64748b; text-transform: uppercase; }
+    .poi-address { font-size: 0.875rem; color: #64748b; margin-top: 0.25rem; }
+
+    .status { padding: 1rem; text-align: center; color: #64748b; }
+    .error { color: #dc2626; background: #fef2f2; padding: 1rem; border-radius: 8px; }
+
+    .suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      z-index: 1000;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .suggestion {
+      padding: 0.75rem;
+      cursor: pointer;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .suggestion:hover { background: #f1f5f9; }
+    .suggestion:last-child { border-bottom: none; }
+
+    .search-wrapper { position: relative; flex: 1; min-width: 200px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Explore Nearby Places</h1>
+
+    <div class="controls">
+      <div class="search-row">
+        <div class="search-wrapper">
+          <input type="text" id="city-search" placeholder="Search city (e.g., Paris, Rio de Janeiro)">
+          <div id="suggestions" class="suggestions" style="display: none;"></div>
+        </div>
+        <input type="number" id="radius" value="5" min="1" max="50" placeholder="Radius km">
+        <button class="explore-btn" id="explore-btn" disabled>Explore</button>
+      </div>
+
+      <div class="categories" id="categories"></div>
+    </div>
+
+    <div class="results-container">
+      <div id="map"></div>
+      <div class="poi-list" id="poi-list">
+        <div class="status">Search for a city and select categories to explore</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // State
+    let selectedLocation = null;
+    let selectedCategories = new Set(['attraction', 'museum', 'viewpoint']);
+    let markers = [];
+    let map;
+
+    // Category icons
+    const categoryIcons = {
+      museum: '🏛️', attraction: '⭐', viewpoint: '👁️', gallery: '🖼️',
+      historic: '🏰', religious: '⛪', park: '🌳', beach: '🏖️',
+      nature_reserve: '🌲', waterfall: '💧', peak: '⛰️', cave: '🕳️',
+      climbing: '🧗', diving: '🤿', surfing: '🏄', kitesurfing: '🪁',
+      paragliding: '🪂', skydiving: '🪂', bungee: '🎢', rafting: '🚣',
+      kayak: '🛶', skiing: '⛷️', mountain_biking: '🚵', zip_line: '🎿',
+      restaurant: '🍽️', cafe: '☕', bar: '🍺', market: '🛒',
+      theatre: '🎭', cinema: '🎬', zoo: '🦁', aquarium: '🐠',
+      theme_park: '🎢', nightclub: '🎉', swimming: '🏊', stadium: '🏟️',
+      golf: '⛳', hotel: '🏨', hostel: '🛏️', camping: '⛺'
+    };
+
+    // Init map
+    map = L.map('map').setView([48.85, 2.35], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Load categories
+    fetch('/api/osm/categories')
+      .then(r => r.json())
+      .then(categories => {
+        const container = document.getElementById('categories');
+        categories.forEach(cat => {
+          const btn = document.createElement('button');
+          btn.className = 'cat-btn' + (selectedCategories.has(cat) ? ' selected' : '');
+          btn.textContent = `${categoryIcons[cat] || '📍'} ${cat.replace('_', ' ')}`;
+          btn.onclick = () => {
+            if (selectedCategories.has(cat)) {
+              selectedCategories.delete(cat);
+              btn.classList.remove('selected');
+            } else {
+              selectedCategories.add(cat);
+              btn.classList.add('selected');
+            }
+            updateExploreButton();
+          };
+          container.appendChild(btn);
+        });
+      });
+
+    // City search with autocomplete
+    let searchTimeout;
+    const searchInput = document.getElementById('city-search');
+    const suggestionsEl = document.getElementById('suggestions');
+
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      const q = e.target.value.trim();
+      if (q.length < 2) {
+        suggestionsEl.style.display = 'none';
+        return;
+      }
+      searchTimeout = setTimeout(() => {
+        fetch(`/api/geocode/search?q=${encodeURIComponent(q)}&limit=5`)
+          .then(r => r.json())
+          .then(results => {
+            if (results.length === 0) {
+              suggestionsEl.style.display = 'none';
+              return;
+            }
+            suggestionsEl.innerHTML = results.map(r => `
+              <div class="suggestion" data-lat="${r.lat}" data-lng="${r.lng}" data-name="${r.display_name}">
+                ${r.display_name}
+              </div>
+            `).join('');
+            suggestionsEl.style.display = 'block';
+          });
+      }, 300);
+    });
+
+    suggestionsEl.addEventListener('click', (e) => {
+      const suggestion = e.target.closest('.suggestion');
+      if (!suggestion) return;
+
+      selectedLocation = {
+        lat: parseFloat(suggestion.dataset.lat),
+        lng: parseFloat(suggestion.dataset.lng),
+        name: suggestion.dataset.name
+      };
+      searchInput.value = suggestion.dataset.name;
+      suggestionsEl.style.display = 'none';
+      map.setView([selectedLocation.lat, selectedLocation.lng], 13);
+      updateExploreButton();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-wrapper')) {
+        suggestionsEl.style.display = 'none';
+      }
+    });
+
+    function updateExploreButton() {
+      document.getElementById('explore-btn').disabled = !selectedLocation || selectedCategories.size === 0;
+    }
+
+    // Explore!
+    document.getElementById('explore-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('explore-btn');
+      const listEl = document.getElementById('poi-list');
+      const radius = parseInt(document.getElementById('radius').value) || 5;
+
+      btn.disabled = true;
+      btn.textContent = 'Loading...';
+      listEl.innerHTML = '<div class="status">Fetching places from OpenStreetMap...</div>';
+
+      // Clear markers
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+
+      try {
+        const response = await fetch('/api/osm/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            center: { lat: selectedLocation.lat, lng: selectedLocation.lng },
+            radius_km: radius,
+            categories: Array.from(selectedCategories),
+            limit: 200
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to fetch');
+        }
+
+        if (data.pois.length === 0) {
+          listEl.innerHTML = '<div class="status">No places found. Try different categories or larger radius.</div>';
+          return;
+        }
+
+        // Render list
+        listEl.innerHTML = data.pois.map((poi, i) => `
+          <div class="poi-item" data-index="${i}">
+            <div class="poi-category">${categoryIcons[poi.category] || '📍'} ${poi.category}</div>
+            <div class="poi-name">${poi.name}</div>
+            ${poi.address?.street ? `<div class="poi-address">${poi.address.street}</div>` : ''}
+          </div>
+        `).join('');
+
+        // Add markers
+        data.pois.forEach((poi, i) => {
+          const marker = L.marker([poi.lat, poi.lng])
+            .addTo(map)
+            .bindPopup(`<b>${poi.name}</b><br>${poi.category}`);
+          markers.push(marker);
+        });
+
+        // Fit bounds
+        if (markers.length > 0) {
+          const group = L.featureGroup(markers);
+          map.fitBounds(group.getBounds().pad(0.1));
+        }
+
+        // Click handlers
+        listEl.querySelectorAll('.poi-item').forEach(item => {
+          item.addEventListener('click', () => {
+            const idx = parseInt(item.dataset.index);
+            markers[idx].openPopup();
+            map.setView(markers[idx].getLatLng(), 15);
+          });
+        });
+
+      } catch (error) {
+        listEl.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Explore';
+      }
+    });
+  </script>
+</body>
+</html>
