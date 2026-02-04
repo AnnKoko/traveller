@@ -980,32 +980,35 @@
       const routeResult = document.getElementById('route-result');
       routeResult.style.display = 'block';
 
-      // Calculate distances between POIs
+      // Show loading state
+      routeResult.innerHTML = `<div class="status-message loading">Розраховуємо маршрути...</div>`;
+
+      // Fetch transit directions between POIs
       const hasAccommodation = !!accommodationLocation;
-      const routeWithDistances = route.map((dayPois, dayIdx) => {
-        const pois = dayPois.map((poi, idx) => {
-          let distanceFromPrev = null;
-          let walkTime = null;
-          if (idx > 0) {
-            const prev = dayPois[idx - 1];
-            distanceFromPrev = haversine(prev.lat, prev.lng, poi.lat, poi.lng);
-            walkTime = Math.round(distanceFromPrev / 5 * 60); // 5 km/h walking speed
-          } else if (hasAccommodation) {
-            distanceFromPrev = haversine(startPoint.lat, startPoint.lng, poi.lat, poi.lng);
-            walkTime = Math.round(distanceFromPrev / 5 * 60);
-          }
-          return { ...poi, distanceFromPrev, walkTime };
-        });
-        return pois;
-      });
+      const routeWithDirections = await calculateRouteDirections(route, startPoint, hasAccommodation);
 
       routeResult.innerHTML = `
         <h3 style="margin-bottom:1rem;">🎉 Ваш маршрут готовий!</h3>
-        ${routeWithDistances.map((dayPois, dayIdx) => `
+        ${routeWithDirections.map((dayData, dayIdx) => `
           <div class="route-day">
-            <div class="route-day-header">📅 День ${dayIdx + 1} (${dayPois.length} місць)</div>
-            ${dayPois.map((poi, stopIdx) => `
-              ${poi.walkTime ? `<div style="color:#64748b;font-size:0.75rem;padding:0.25rem 0 0.25rem 2rem;">🚶 ${poi.walkTime} хв (${poi.distanceFromPrev.toFixed(1)} км)</div>` : ''}
+            <div class="route-day-header">📅 День ${dayIdx + 1} (${dayData.pois.length} місць)</div>
+            ${dayData.pois.map((poi, stopIdx) => `
+              ${poi.directions ? `
+                <div style="color:#64748b;font-size:0.75rem;padding:0.5rem 0.5rem 0.5rem 2rem;background:#1e293b;margin:0.25rem 0;border-radius:6px;">
+                  ${poi.directions.transit ? `
+                    <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                      ${poi.directions.steps.map(step => `
+                        <span style="display:inline-flex;align-items:center;gap:0.2rem;${step.color ? `color:${step.color}` : ''}">
+                          ${step.icon} ${step.text}
+                        </span>
+                      `).join('<span style="color:#475569">→</span>')}
+                    </div>
+                    <div style="margin-top:0.25rem;color:#94a3b8;">⏱️ ${poi.directions.duration}</div>
+                  ` : `
+                    <span>🚶 ${poi.directions.duration} (${poi.directions.distance})</span>
+                  `}
+                </div>
+              ` : ''}
               <div class="route-stop">
                 <div class="route-stop-number">${stopIdx + 1}</div>
                 <div class="route-stop-info">
@@ -1014,11 +1017,11 @@
                 </div>
               </div>
             `).join('')}
+            <div style="text-align:right;font-size:0.75rem;color:#64748b;margin-top:0.5rem;">
+              Загалом: ~${dayData.totalTime} хв
+            </div>
           </div>
         `).join('')}
-        <div style="margin-top:1rem;padding:0.75rem;background:#0f172a;border-radius:8px;font-size:0.8rem;color:#94a3b8;">
-          💡 Час пішки розраховано зі швидкістю 5 км/год
-        </div>
         <button class="btn btn-primary" style="width:100%;margin-top:1rem;" onclick="closeModal()">Закрити</button>
       `;
 
@@ -1170,6 +1173,116 @@
       const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLng = (lng2 - lng1) * Math.PI / 180;
       const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    // Fetch directions between POIs
+    async function calculateRouteDirections(route, startPoint, hasAccommodation) {
+      const transitIcons = {
+        'WALKING': '🚶',
+        'TRANSIT': '🚇',
+        'SUBWAY': '🚇',
+        'METRO_RAIL': '🚇',
+        'RAIL': '🚆',
+        'BUS': '🚌',
+        'TRAM': '🚊',
+        'FERRY': '⛴️'
+      };
+
+      const results = [];
+
+      for (let dayIdx = 0; dayIdx < route.length; dayIdx++) {
+        const dayPois = route[dayIdx];
+        const poisWithDirections = [];
+        let totalTime = 0;
+
+        for (let i = 0; i < dayPois.length; i++) {
+          const poi = { ...dayPois[i] };
+
+          // Determine origin point
+          let origin;
+          if (i === 0) {
+            if (hasAccommodation) {
+              origin = startPoint;
+            } else if (dayIdx > 0 && results[dayIdx - 1]?.pois.length > 0) {
+              const prevDay = results[dayIdx - 1].pois;
+              const lastPoi = prevDay[prevDay.length - 1];
+              origin = { lat: lastPoi.lat, lng: lastPoi.lng };
+            } else {
+              origin = null; // First POI of first day without accommodation
+            }
+          } else {
+            origin = dayPois[i - 1];
+          }
+
+          if (origin) {
+            try {
+              const response = await fetch(
+                `/api/directions?origin=${origin.lat},${origin.lng}&destination=${poi.lat},${poi.lng}&mode=transit`
+              );
+              const data = await response.json();
+
+              if (data.routes && data.routes[0]?.legs[0]) {
+                const leg = data.routes[0].legs[0];
+                const duration = leg.duration.text;
+                const durationValue = Math.round(leg.duration.value / 60);
+                totalTime += durationValue;
+
+                // Check if it's transit or just walking
+                const hasTransit = leg.steps?.some(s => s.travel_mode === 'TRANSIT');
+
+                if (hasTransit) {
+                  // Parse transit steps
+                  const steps = leg.steps
+                    .filter(s => s.travel_mode === 'TRANSIT' || (s.travel_mode === 'WALKING' && s.duration.value > 180))
+                    .map(step => {
+                      if (step.travel_mode === 'TRANSIT') {
+                        const transit = step.transit_details;
+                        const vehicleType = transit?.line?.vehicle?.type || 'TRANSIT';
+                        const lineName = transit?.line?.short_name || transit?.line?.name || '';
+                        const lineColor = transit?.line?.color;
+                        return {
+                          icon: transitIcons[vehicleType] || '🚇',
+                          text: lineName,
+                          color: lineColor
+                        };
+                      } else {
+                        return {
+                          icon: '🚶',
+                          text: `${Math.round(step.duration.value / 60)} хв`,
+                          color: null
+                        };
+                      }
+                    });
+
+                  poi.directions = { transit: true, duration, steps };
+                } else {
+                  poi.directions = {
+                    transit: false,
+                    duration,
+                    distance: leg.distance.text
+                  };
+                }
+              }
+            } catch (e) {
+              // Fallback to walking estimate
+              const distance = haversine(origin.lat, origin.lng, poi.lat, poi.lng);
+              const walkMinutes = Math.round(distance / 5 * 60);
+              totalTime += walkMinutes;
+              poi.directions = {
+                transit: false,
+                duration: `${walkMinutes} хв`,
+                distance: `${distance.toFixed(1)} км`
+              };
+            }
+          }
+
+          poisWithDirections.push(poi);
+        }
+
+        results.push({ pois: poisWithDirections, totalTime });
+      }
+
+      return results;
     }
 
     let routeLines = [];
