@@ -1006,17 +1006,40 @@
     function optimizeRoute(places, start, days, perDay) {
       const remaining = [...places];
       const route = [];
-      let current = start;
       const hasAccommodation = !!accommodationLocation;
 
+      // If no accommodation, find geographic center of all POIs and start from nearest POI to that center
+      let current;
+      if (hasAccommodation) {
+        current = start;
+      } else {
+        // Find centroid of all selected POIs
+        const centroidLat = remaining.reduce((sum, p) => sum + p.lat, 0) / remaining.length;
+        const centroidLng = remaining.reduce((sum, p) => sum + p.lng, 0) / remaining.length;
+
+        // Find POI closest to centroid - this will be our starting point
+        let startIdx = 0, minDist = Infinity;
+        remaining.forEach((poi, idx) => {
+          const dist = haversine(centroidLat, centroidLng, poi.lat, poi.lng);
+          if (dist < minDist) { minDist = dist; startIdx = idx; }
+        });
+        const startPoi = remaining.splice(startIdx, 1)[0];
+        route.push([startPoi]); // First day starts with this POI
+        current = { lat: startPoi.lat, lng: startPoi.lng };
+      }
+
       for (let day = 0; day < days && remaining.length > 0; day++) {
-        const dayRoute = [];
-        // If has accommodation, each day starts from hotel; otherwise continue from last POI
+        // If we already added starting POI for no-accommodation case
+        let dayRoute = (!hasAccommodation && day === 0 && route.length > 0) ? route[0] : [];
+
+        // If has accommodation, each day starts from hotel
         if (hasAccommodation && day > 0) {
           current = start;
         }
 
-        for (let i = 0; i < perDay && remaining.length > 0; i++) {
+        const spotsToAdd = (!hasAccommodation && day === 0) ? perDay - 1 : perDay;
+
+        for (let i = 0; i < spotsToAdd && remaining.length > 0; i++) {
           let nearestIdx = 0, nearestDist = Infinity;
           remaining.forEach((poi, idx) => {
             const dist = haversine(current.lat, current.lng, poi.lat, poi.lng);
@@ -1026,7 +1049,12 @@
           dayRoute.push(next);
           current = { lat: next.lat, lng: next.lng };
         }
-        route.push(dayRoute);
+
+        if (!hasAccommodation && day === 0) {
+          route[0] = dayRoute;
+        } else {
+          route.push(dayRoute);
+        }
       }
       return route;
     }
