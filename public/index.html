@@ -980,12 +980,32 @@
       const routeResult = document.getElementById('route-result');
       routeResult.style.display = 'block';
 
+      // Calculate distances between POIs
+      const hasAccommodation = !!accommodationLocation;
+      const routeWithDistances = route.map((dayPois, dayIdx) => {
+        const pois = dayPois.map((poi, idx) => {
+          let distanceFromPrev = null;
+          let walkTime = null;
+          if (idx > 0) {
+            const prev = dayPois[idx - 1];
+            distanceFromPrev = haversine(prev.lat, prev.lng, poi.lat, poi.lng);
+            walkTime = Math.round(distanceFromPrev / 5 * 60); // 5 km/h walking speed
+          } else if (hasAccommodation) {
+            distanceFromPrev = haversine(startPoint.lat, startPoint.lng, poi.lat, poi.lng);
+            walkTime = Math.round(distanceFromPrev / 5 * 60);
+          }
+          return { ...poi, distanceFromPrev, walkTime };
+        });
+        return pois;
+      });
+
       routeResult.innerHTML = `
         <h3 style="margin-bottom:1rem;">🎉 Ваш маршрут готовий!</h3>
-        ${route.map((dayPois, dayIdx) => `
+        ${routeWithDistances.map((dayPois, dayIdx) => `
           <div class="route-day">
             <div class="route-day-header">📅 День ${dayIdx + 1} (${dayPois.length} місць)</div>
             ${dayPois.map((poi, stopIdx) => `
+              ${poi.walkTime ? `<div style="color:#64748b;font-size:0.75rem;padding:0.25rem 0 0.25rem 2rem;">🚶 ${poi.walkTime} хв (${poi.distanceFromPrev.toFixed(1)} км)</div>` : ''}
               <div class="route-stop">
                 <div class="route-stop-number">${stopIdx + 1}</div>
                 <div class="route-stop-info">
@@ -996,6 +1016,9 @@
             `).join('')}
           </div>
         `).join('')}
+        <div style="margin-top:1rem;padding:0.75rem;background:#0f172a;border-radius:8px;font-size:0.8rem;color:#94a3b8;">
+          💡 Час пішки розраховано зі швидкістю 5 км/год
+        </div>
         <button class="btn btn-primary" style="width:100%;margin-top:1rem;" onclick="closeModal()">Закрити</button>
       `;
 
