@@ -1004,59 +1004,143 @@
     }
 
     function optimizeRoute(places, start, days, perDay) {
-      const remaining = [...places];
-      const route = [];
+      if (places.length === 0) return [];
+
       const hasAccommodation = !!accommodationLocation;
 
-      // If no accommodation, find geographic center of all POIs and start from nearest POI to that center
-      let current;
-      if (hasAccommodation) {
-        current = start;
-      } else {
-        // Find centroid of all selected POIs
-        const centroidLat = remaining.reduce((sum, p) => sum + p.lat, 0) / remaining.length;
-        const centroidLng = remaining.reduce((sum, p) => sum + p.lng, 0) / remaining.length;
+      // Step 1: Cluster POIs geographically into days using k-means
+      const clusters = kMeansCluster(places, days);
 
-        // Find POI closest to centroid - this will be our starting point
-        let startIdx = 0, minDist = Infinity;
-        remaining.forEach((poi, idx) => {
-          const dist = haversine(centroidLat, centroidLng, poi.lat, poi.lng);
-          if (dist < minDist) { minDist = dist; startIdx = idx; }
-        });
-        const startPoi = remaining.splice(startIdx, 1)[0];
-        route.push([startPoi]); // First day starts with this POI
-        current = { lat: startPoi.lat, lng: startPoi.lng };
-      }
+      // Step 2: Sort clusters by distance from start point (closest cluster = day 1)
+      const startPoint = hasAccommodation ? start : {
+        lat: places.reduce((s, p) => s + p.lat, 0) / places.length,
+        lng: places.reduce((s, p) => s + p.lng, 0) / places.length
+      };
 
-      for (let day = 0; day < days && remaining.length > 0; day++) {
-        // If we already added starting POI for no-accommodation case
-        let dayRoute = (!hasAccommodation && day === 0 && route.length > 0) ? route[0] : [];
+      clusters.sort((a, b) => {
+        const centroidA = getClusterCentroid(a);
+        const centroidB = getClusterCentroid(b);
+        return haversine(startPoint.lat, startPoint.lng, centroidA.lat, centroidA.lng) -
+               haversine(startPoint.lat, startPoint.lng, centroidB.lat, centroidB.lng);
+      });
 
-        // If has accommodation, each day starts from hotel
-        if (hasAccommodation && day > 0) {
+      // Step 3: Within each cluster, optimize order using nearest neighbor
+      const route = clusters.map((cluster, dayIdx) => {
+        if (cluster.length === 0) return [];
+
+        // Start point for this day's route
+        let current;
+        if (hasAccommodation) {
           current = start;
+        } else if (dayIdx === 0) {
+          // First day without accommodation: start from POI closest to cluster centroid
+          const centroid = getClusterCentroid(cluster);
+          let nearestIdx = 0, minDist = Infinity;
+          cluster.forEach((poi, idx) => {
+            const dist = haversine(centroid.lat, centroid.lng, poi.lat, poi.lng);
+            if (dist < minDist) { minDist = dist; nearestIdx = idx; }
+          });
+          const firstPoi = cluster.splice(nearestIdx, 1)[0];
+          current = { lat: firstPoi.lat, lng: firstPoi.lng };
+          const orderedDay = [firstPoi];
+          // Continue with remaining POIs
+          while (cluster.length > 0) {
+            let nearestIdx = 0, nearestDist = Infinity;
+            cluster.forEach((poi, idx) => {
+              const dist = haversine(current.lat, current.lng, poi.lat, poi.lng);
+              if (dist < nearestDist) { nearestDist = dist; nearestIdx = idx; }
+            });
+            const next = cluster.splice(nearestIdx, 1)[0];
+            orderedDay.push(next);
+            current = { lat: next.lat, lng: next.lng };
+          }
+          return orderedDay;
+        } else {
+          // Subsequent days: start from last POI of previous day
+          const prevDay = route[dayIdx - 1];
+          const lastPoi = prevDay[prevDay.length - 1];
+          current = { lat: lastPoi.lat, lng: lastPoi.lng };
         }
 
-        const spotsToAdd = (!hasAccommodation && day === 0) ? perDay - 1 : perDay;
-
-        for (let i = 0; i < spotsToAdd && remaining.length > 0; i++) {
+        // Order POIs in cluster using nearest neighbor
+        const remaining = [...cluster];
+        const orderedDay = [];
+        while (remaining.length > 0) {
           let nearestIdx = 0, nearestDist = Infinity;
           remaining.forEach((poi, idx) => {
             const dist = haversine(current.lat, current.lng, poi.lat, poi.lng);
             if (dist < nearestDist) { nearestDist = dist; nearestIdx = idx; }
           });
           const next = remaining.splice(nearestIdx, 1)[0];
-          dayRoute.push(next);
+          orderedDay.push(next);
           current = { lat: next.lat, lng: next.lng };
         }
+        return orderedDay;
+      });
 
-        if (!hasAccommodation && day === 0) {
-          route[0] = dayRoute;
-        } else {
-          route.push(dayRoute);
+      return route.filter(day => day.length > 0);
+    }
+
+    // K-means clustering
+    function kMeansCluster(points, k) {
+      if (points.length <= k) {
+        return points.map(p => [p]);
+      }
+
+      // Initialize centroids using k-means++ method
+      const centroids = [];
+      centroids.push({ lat: points[0].lat, lng: points[0].lng });
+
+      while (centroids.length < k) {
+        const distances = points.map(p => {
+          const minDist = Math.min(...centroids.map(c => haversine(p.lat, p.lng, c.lat, c.lng)));
+          return minDist * minDist;
+        });
+        const totalDist = distances.reduce((a, b) => a + b, 0);
+        let random = Math.random() * totalDist;
+        for (let i = 0; i < points.length; i++) {
+          random -= distances[i];
+          if (random <= 0) {
+            centroids.push({ lat: points[i].lat, lng: points[i].lng });
+            break;
+          }
         }
       }
-      return route;
+
+      // Iterate k-means
+      let clusters;
+      for (let iter = 0; iter < 10; iter++) {
+        // Assign points to nearest centroid
+        clusters = Array.from({ length: k }, () => []);
+        points.forEach(p => {
+          let nearestIdx = 0, minDist = Infinity;
+          centroids.forEach((c, idx) => {
+            const dist = haversine(p.lat, p.lng, c.lat, c.lng);
+            if (dist < minDist) { minDist = dist; nearestIdx = idx; }
+          });
+          clusters[nearestIdx].push(p);
+        });
+
+        // Update centroids
+        clusters.forEach((cluster, idx) => {
+          if (cluster.length > 0) {
+            centroids[idx] = {
+              lat: cluster.reduce((s, p) => s + p.lat, 0) / cluster.length,
+              lng: cluster.reduce((s, p) => s + p.lng, 0) / cluster.length
+            };
+          }
+        });
+      }
+
+      return clusters;
+    }
+
+    function getClusterCentroid(cluster) {
+      if (cluster.length === 0) return { lat: 0, lng: 0 };
+      return {
+        lat: cluster.reduce((s, p) => s + p.lat, 0) / cluster.length,
+        lng: cluster.reduce((s, p) => s + p.lng, 0) / cluster.length
+      };
     }
 
     function haversine(lat1, lng1, lat2, lng2) {
