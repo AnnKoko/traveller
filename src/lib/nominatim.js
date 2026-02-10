@@ -5,7 +5,7 @@
  */
 
 const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org';
-const USER_AGENT = 'Traveller/1.0 (https://github.com/traveller-app; contact@traveller.app)';
+const USER_AGENT = 'Explorer/1.0 (https://github.com/explorer-app; contact@explorer.app)';
 
 /**
  * Search for a place by name

@@ -1,5 +1,5 @@
 {
-  "name": "traveller",
+  "name": "explorer",
   "version": "1.0.0",
   "description": "A travel planning web application",
   "main": "src/server.js",

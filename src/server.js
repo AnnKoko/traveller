@@ -114,7 +114,7 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
 }
 
 app.listen(PORT, () => {
-  console.log(`Traveller app running on http://localhost:${PORT}`);
+  console.log(`Explorer app running on http://localhost:${PORT}`);
   if (GOOGLE_API_KEY) {
     console.log('✓ Google Directions API enabled');
   } else {

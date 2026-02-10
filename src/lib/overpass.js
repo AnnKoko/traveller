@@ -4,7 +4,7 @@
  */
 
 const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
-const USER_AGENT = 'Traveller/1.0 (https://github.com/traveller-app; contact@traveller.app)';
+const USER_AGENT = 'Explorer/1.0 (https://github.com/explorer-app; contact@explorer.app)';
 const REQUEST_TIMEOUT = 25000; // 25 seconds
 const MAX_RETRIES = 2;
 
